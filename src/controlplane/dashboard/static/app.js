@@ -109,6 +109,8 @@ function openDrawer(title, bodyHtml) {
   $("#drawer").classList.add("open");
   $("#drawer").setAttribute("aria-hidden", "false");
   $("#scrim").classList.add("open");
+  const close = $("#drawer-close");
+  if (close) close.focus();
 }
 function closeDrawer() {
   $("#drawer").classList.remove("open");
@@ -285,9 +287,8 @@ async function viewOverview() {
     const hardBtn = spotlight.querySelector("#btn-hard-case");
     if (hard && hardBtn) {
       hardBtn.addEventListener("click", () => {
-        setView("incidents", { lag: "deep" });
-        // Give the view a tick to mount, then open the drawer.
-        setTimeout(() => showIncident(hard), 60);
+        // Open the drawer immediately from Overview — don't wait on a view remount.
+        showIncident(hard);
       });
     } else if (hardBtn) {
       hardBtn.remove();
@@ -453,10 +454,14 @@ async function viewIncidents(opts = {}) {
   }
 
   // Prefer showing late catches first — those are the ones that make the point.
+  // Within the same delay, prefer exact pinpoints so the list leads with wins.
   feed.sort((a, b) => {
     const da = a.delta_detect == null ? -1 : a.delta_detect;
     const db = b.delta_detect == null ? -1 : b.delta_detect;
-    return db - da;
+    if (db !== da) return db - da;
+    const ea = a.localization_error === 0 ? 0 : 1;
+    const eb = b.localization_error === 0 ? 0 : 1;
+    return ea - eb;
   });
 
   const scored = feed.filter((i) => i.localization_error !== null);
