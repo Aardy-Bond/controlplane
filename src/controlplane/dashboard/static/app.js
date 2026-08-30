@@ -613,7 +613,14 @@ async function viewIncidents(opts = {}) {
     });
     labelCells(table);
   };
-  filters.querySelectorAll("select").forEach((s) => s.addEventListener("change", renderRows));
+  filters.querySelectorAll("select").forEach((s) =>
+    s.addEventListener("change", () => {
+      renderRows();
+      const lag = $("#flt-lag").value;
+      const q = lag && lag !== "all" ? `?lag=${encodeURIComponent(lag)}` : "";
+      history.replaceState(null, "", `#incidents${q}`);
+    })
+  );
   // Deep-link support: #incidents?lag=late|deep|0|1
   if (opts.lag && ["all", "0", "1", "late", "deep"].includes(opts.lag)) {
     $("#flt-lag").value = opts.lag;
