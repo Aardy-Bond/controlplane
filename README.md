@@ -157,18 +157,35 @@ stating plainly, because neither is flattering by default:
   headline to the model-as-judge component.
 
 Localization is scored against the **injected fault step**, and compared to the
-alternatives on identical incidents replayed from saved ledgers (n = 54):
+alternatives on identical incidents replayed from saved ledgers (n = 54).
+
+The pooled average alone is misleading. Half the incidents are caught within
+one step of the planted fault; on those, blaming the previous step is already
+exact and binary search earns nothing. The interesting regime is late
+detection. Split by how long the problem went unnoticed:
+
+| Regime | n | Mean lag | Ours exact | Blame previous step | Mean error (prev) |
+|---|---|---|---|---|---|
+| Caught immediately (lag ≤ 1) | 27 | 0.3 | **100%** | 66.7% | 0.3 |
+| Caught late (lag > 1) | 27 | 15.6 | **100%** | **0%** | 15.6 |
+| …of which lag 42–43 (async) | 9 | 42.3 | **100%** | **0%** | 42.3 |
+
+Pooled, for completeness — feature the fair cheap guess, not the strawman:
 
 | Method | Exact | Within ±1 | Mean error | Model calls |
 |---|---|---|---|---|
 | binary search (ours) | **100%** | 100% | 0.0 | 0 (4.5 evaluations) |
 | LLM reads the whole trace | 57.4% | 61.1% | 5.35 | 1 per incident |
-| blame the alarm step | 22.2% | 61.1% | 5.70 | 0 |
-| blame the last tool call | 22.2% | 61.1% | 5.70 | 0 |
-| random | 16.7% | 33.3% | 4.94 | 0 |
+| blame the previous step (fair) | 33.3% | 50.0% | 7.94 | 0 |
+| blame the last state-changing write | 33.3% | 50.0% | 7.94 | 0 |
+| blame the last tool call | 33.3% | 50.0% | 7.94 | 0 |
+| blame the alarm step itself (sanity floor) | 0% | 33.3% | 8.94 | 0 |
+| random | 22.2% | 38.9% | 5.83 | 0 |
 
-Detection lag (Δdetect) has a median of 1.5 steps but a p90 of 42 — that spread
-*is* the inline-versus-async trade-off, visible in one number.
+Detection lag has a median of 1.5 steps but a p90 of 42 — that spread *is* the
+inline-versus-async trade-off, visible in one number. The late band is where
+search has to do real work; the immediate band is where a human staring at the
+trace would already be right.
 
 One subtlety that took a scoring fix to get right: on a 57-step run the agent
 sometimes makes its **own** unrelated mistake, and a guard catches it. Charging
@@ -212,6 +229,17 @@ p = 0.031 — on the strength of 6 discordant pairs. That is a real result and a
 thin one; it would not survive one scenario behaving differently. Bootstrap CIs
 accompany every headline number for the same reason. The honest reading is
 "consistent, directionally strong, and under-powered", not "proven".
+
+**The original localization baseline was a strawman, and it has been fixed.**
+An earlier comparison reported "blame the alarm step" at 22% exact. That
+baseline was mis-specified (and, on recovered runs, incorrectly clamped to the
+post-rollback ledger length), so it lost on every lag-0 incident for a reason
+that had nothing to do with the difficulty of the task. The fair cheap guess —
+blame the previous step — is exact on all 18 same-step catches (33% pooled)
+and collapses to 0% once detection slips by more than one step. The headline
+is now that split, not the pooled win over a broken baseline. The late-detection
+band is still only 27 incidents (9 of them the 42-step async cases); that is
+enough to show the collapse, not enough to put a tight CI on it.
 
 **Recoverability@L is 68%, not 100%.** Three of the incidents escalate to a
 human instead of recovering. That is usually the *correct* outcome — an

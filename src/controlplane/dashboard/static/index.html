@@ -3,38 +3,77 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>ControlPlane</title>
+<title>ControlPlane — catch bad agent steps before they cascade</title>
+<meta name="description" content="A runtime supervisor that watches tool-using AI agents, catches safety failures, finds the step that went wrong, and rolls back." />
+<meta property="og:title" content="ControlPlane" />
+<meta property="og:description" content="Catch the step that went wrong — not just the moment it showed up." />
+<meta property="og:image" content="/static/og.jpg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/static/app.css" />
 </head>
 <body>
-<header class="topbar">
-  <div class="brand">
-    <span class="mark"></span>
-    <div>
-      <h1>ControlPlane</h1>
-      <p>Runtime supervisor for tool-augmented agents</p>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 40 40" aria-hidden="true">
+        <rect width="40" height="40" rx="10" fill="url(#g)"/>
+        <path d="M10 20h8M22 12v16M26 16h4M26 24h4" stroke="#e8f5f0" stroke-width="2.4" stroke-linecap="round"/>
+        <defs><linearGradient id="g" x1="0" y1="0" x2="40" y2="40">
+          <stop stop-color="#1a6b5c"/><stop offset="1" stop-color="#0d3d36"/>
+        </linearGradient></defs>
+      </svg>
+      <div>
+        <strong>ControlPlane</strong>
+        <span>watches agents as they work</span>
+      </div>
     </div>
-  </div>
-  <nav class="tabs" id="tabs">
-    <button data-view="incidents" class="active">Incidents</button>
-    <button data-view="runs">Runs</button>
-    <button data-view="guards">Guards</button>
-    <button data-view="policy">Policy</button>
-    <button data-view="evidence">Evidence</button>
-  </nav>
-  <div class="tenant">
-    <label for="tenant">tenant</label>
-    <input id="tenant" value="meridian" spellcheck="false" />
-  </div>
-</header>
+    <nav class="nav" id="nav">
+      <button data-view="overview" class="active">Overview</button>
+      <button data-view="incidents">Problems caught</button>
+      <button data-view="runs">Agent runs</button>
+      <button data-view="guards">Safety checks</button>
+      <button data-view="policy">Risk profiles</button>
+      <button data-view="evidence">The evidence</button>
+    </nav>
+    <div class="sidebar-foot">
+      <label for="tenant">Workspace</label>
+      <input id="tenant" value="meridian" spellcheck="false" autocomplete="off" />
+      <p class="dim">Numbers on this page come from the run files in the repo. Nothing here calls a model.</p>
+    </div>
+  </aside>
 
-<main id="main">
-  <section id="view-incidents" class="view active"></section>
-  <section id="view-runs" class="view"></section>
-  <section id="view-guards" class="view"></section>
-  <section id="view-policy" class="view"></section>
-  <section id="view-evidence" class="view"></section>
-</main>
+  <div class="main-wrap">
+    <header class="topbar">
+      <button class="menu-btn" id="menu-btn" aria-label="Open menu">☰</button>
+      <div class="topbar-title" id="topbar-title">Overview</div>
+      <div class="live-pill" title="Reading committed run records">
+        <span class="dot"></span> Evidence on disk
+      </div>
+    </header>
+
+    <main id="main">
+      <section id="view-overview" class="view active"></section>
+      <section id="view-incidents" class="view"></section>
+      <section id="view-runs" class="view"></section>
+      <section id="view-guards" class="view"></section>
+      <section id="view-policy" class="view"></section>
+      <section id="view-evidence" class="view"></section>
+    </main>
+  </div>
+</div>
+
+<nav class="tabbar" id="tabbar" aria-label="Primary">
+  <button data-view="overview" class="active">Overview</button>
+  <button data-view="incidents">Caught</button>
+  <button data-view="runs">Runs</button>
+  <button data-view="guards">Checks</button>
+  <button data-view="evidence">Evidence</button>
+</nav>
 
 <div id="drawer" class="drawer" aria-hidden="true">
   <div class="drawer-head">
@@ -45,6 +84,7 @@
 </div>
 <div id="scrim" class="scrim"></div>
 
+<script src="/static/charts.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

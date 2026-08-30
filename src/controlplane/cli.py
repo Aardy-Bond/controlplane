@@ -190,7 +190,7 @@ def _cmd_ladder(args) -> int:
     judge = LLMClient("judge") if args.llm_baseline else None
     localization = exp.localization_vs_baselines(judge=judge)
 
-    exp.save()
+    exp.save(localization=localization)
     claims = write_claims(exp, localization=localization)
 
     table = Table(title="By condition", header_style="bold")
