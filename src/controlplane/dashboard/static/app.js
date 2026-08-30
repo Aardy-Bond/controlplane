@@ -273,11 +273,25 @@ async function viewOverview() {
       <div class="hero-cta" style="margin-top:1rem">
         <button class="btn" data-go-lag="late">Browse the late catches</button>
         <button class="btn ghost" data-go-lag="deep">Only the 40+ step ones</button>
+        <button class="btn ghost" id="btn-hard-case">Open one hard case</button>
       </div>`;
     root.appendChild(spotlight);
     spotlight.querySelectorAll("[data-go-lag]").forEach((b) =>
       b.addEventListener("click", () => setView("incidents", { lag: b.dataset.goLag }))
     );
+    const hard = incidents
+      .filter((i) => (i.delta_detect || 0) >= 40 && i.localization_error === 0)
+      .sort((a, b) => b.delta_detect - a.delta_detect)[0];
+    const hardBtn = spotlight.querySelector("#btn-hard-case");
+    if (hard && hardBtn) {
+      hardBtn.addEventListener("click", () => {
+        setView("incidents", { lag: "deep" });
+        // Give the view a tick to mount, then open the drawer.
+        setTimeout(() => showIncident(hard), 60);
+      });
+    } else if (hardBtn) {
+      hardBtn.remove();
+    }
   }
 
   // Architecture
@@ -639,6 +653,13 @@ async function showIncident(i) {
      (${i.detected_by === "inline" ? "checked instantly, before the action" : "checked in the background — may already be too late"}).
      Last step that was still correct: <b>${i.last_good_step ?? "—"}</b>
      ${i.delta_detect != null ? `· went unnoticed for <b>${i.delta_detect}</b> step(s)` : ""}.</p>
+     ${
+       i.delta_detect != null && i.delta_detect > 1
+         ? `<div class="note">Guessing “previous step” would have landed on step
+            <b>${i.detected_at_step - 1}</b> — off by <b>${i.delta_detect}</b>.
+            The search landed on <b>${i.last_good_step}</b>.</div>`
+         : ""
+     }
      <div id="probe-host">${probeHtml}</div>
      <h4>What happened next</h4>
      ${
