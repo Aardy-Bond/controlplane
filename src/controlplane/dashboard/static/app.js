@@ -960,7 +960,11 @@ async function viewPolicy() {
          <p class="sub">${esc(t.description || "")}</p>
          <p>Instant budget: <b class="mono">${esc(t.inline_budget_p95_ms ?? "—")} ms</b>
             <span class="dim">(p95)</span></p>
-         <p>Background may trail by: <b class="mono">${esc(t.async_lag_steps ?? "—")} steps</b></p>
+         <p>Background checks: <b>${
+           Number(t.async_lag_steps) === 0
+             ? "keep up with the agent (no trailing delay)"
+             : `may trail by <span class="mono">${esc(t.async_lag_steps)} steps</span>`
+         }</b></p>
          <p><b>Checked instantly:</b> ${esc(instant)}</p>
          <p><b>Checked in the background:</b> ${esc(background)}</p>
          <p class="dim">If the supervisor is down:
