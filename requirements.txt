@@ -1,0 +1,10 @@
+# Runtime dependencies for the hosted dashboard only.
+#
+# Deliberately not the project's full dependency set: the deployment serves
+# committed evidence and never calls a model, so the OpenRouter client, the CLI
+# renderer and the test tooling are all absent. Fewer things installed is fewer
+# things that can differ between the machine that produced the evidence and the
+# one displaying it. Local development uses `pip install -e ".[dev]"` instead.
+fastapi==0.115.6
+pydantic==2.10.4
+PyYAML==6.0.2
