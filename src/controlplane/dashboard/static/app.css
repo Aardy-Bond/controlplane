@@ -653,3 +653,11 @@ tr.clickable:hover { background: rgba(125, 211, 192, 0.06); }
   .stat-row { grid-template-columns: 1fr; }
   .live-pill { display: none; }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
