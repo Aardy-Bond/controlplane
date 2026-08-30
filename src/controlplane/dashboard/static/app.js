@@ -133,7 +133,7 @@ function labelCells(table) {
 
 async function viewOverview() {
   const root = $("#view-overview");
-  root.innerHTML = "";
+  root.innerHTML = `<div class="empty">Loading evidence…</div>`;
 
   const hero = el(
     "div",
@@ -148,6 +148,27 @@ async function viewOverview() {
        <button class="btn ghost" data-go="incidents">Browse problems caught</button>
      </div>`
   );
+
+  let exp = null;
+  let incidents = [];
+  let runs = [];
+  try {
+    [exp, incidents, runs] = await Promise.all([
+      api("/experiment").catch(() => null),
+      api("/incidents"),
+      api("/runs"),
+    ]);
+  } catch (e) {
+    root.innerHTML = "";
+    root.appendChild(hero);
+    hero.querySelectorAll("[data-go]").forEach((b) =>
+      b.addEventListener("click", () => setView(b.dataset.go))
+    );
+    root.appendChild(el("div", "empty", `Could not load evidence: ${esc(e.message)}`));
+    return;
+  }
+
+  root.innerHTML = "";
   root.appendChild(hero);
   hero.querySelectorAll("[data-go]").forEach((b) =>
     b.addEventListener("click", () => setView(b.dataset.go))
@@ -172,20 +193,6 @@ async function viewOverview() {
        </ol>`
     )
   );
-
-  let exp = null;
-  let incidents = [];
-  let runs = [];
-  try {
-    [exp, incidents, runs] = await Promise.all([
-      api("/experiment").catch(() => null),
-      api("/incidents"),
-      api("/runs"),
-    ]);
-  } catch (e) {
-    root.appendChild(el("div", "empty", `Could not load evidence: ${esc(e.message)}`));
-    return;
-  }
 
   const on = exp && exp.conditions && exp.conditions.on;
   const off = exp && exp.conditions && exp.conditions.off;
@@ -564,6 +571,12 @@ async function viewIncidents(opts = {}) {
     $("#flt-count").textContent = `${filtered.length} shown`;
     const tbody = table.querySelector("tbody");
     tbody.innerHTML = "";
+    if (!filtered.length) {
+      const tr = el("tr");
+      tr.innerHTML = `<td colspan="9"><div class="empty">Nothing matches these filters.</div></td>`;
+      tbody.appendChild(tr);
+      return;
+    }
     filtered.forEach((i) => {
       const tr = el("tr", "clickable");
       const path =
