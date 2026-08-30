@@ -19,15 +19,41 @@ const trunc = (s, n = 130) => {
 const json = (o) => `<pre class="json">${esc(JSON.stringify(o, null, 2))}</pre>`;
 const pct = (n) => (n == null || Number.isNaN(n) ? "—" : `${Math.round(n)}%`);
 const num = (n, d = 1) => (n == null ? "—" : Number(n).toFixed(d));
+const pFriendly = (p) => {
+  if (p == null) return "—";
+  if (p < 0.001) return "very unlikely by chance";
+  if (p < 0.05) return `unlikely by chance (p ≈ ${Number(p).toFixed(3)})`;
+  return `p ≈ ${Number(p).toFixed(3)}`;
+};
 
 const WORKLOADS = {
-  A: { name: "Customer support", hint: "External-facing · moves money · 150 ms budget" },
-  B: { name: "Internal knowledge", hint: "Entitlement boundaries" },
-  C: { name: "Underwriting", hint: "Long-horizon · ~55 steps · batch" },
+  A: { name: "Customer support", hint: "Talks to customers · can move money · 150 ms budget" },
+  B: { name: "Internal knowledge", hint: "Answers staff questions · respects who can see what" },
+  C: { name: "Underwriting", hint: "Long checklist · ~55 steps · no rush" },
 };
 const workloadName = (id) => (WORKLOADS[id] ? WORKLOADS[id].name : id);
 const workloadLabel = (id) =>
   WORKLOADS[id] ? `${WORKLOADS[id].name} <span class="dim">(${esc(id)})</span>` : esc(id);
+
+const COST_LABEL = {
+  us: "Instant",
+  ms: "Fast",
+  llm: "Needs a model",
+};
+const costLabel = (c) => COST_LABEL[c] || c || "—";
+
+const KIND_LABEL = {
+  binding: "Identity",
+  schema: "Shape",
+  precondition: "Preconditions",
+  provenance: "Where it came from",
+  entitlement: "Permissions",
+  progress: "Making progress",
+  budget: "Budget",
+  safety: "Safety",
+  semantic: "Meaning",
+};
+const kindLabel = (c) => KIND_LABEL[c] || c || "—";
 
 const TITLES = {
   overview: "Overview",
@@ -131,10 +157,11 @@ async function viewOverview() {
              internal question, or working through an underwriting checklist.</li>
          <li>A <b>safety check</b> watches each step. When one fails, that is a problem we caught.</li>
          <li><b>Pinpointing</b> means finding the last step that was still correct — so we know
-             where to roll back, not just that something is wrong.</li>
-         <li>The interesting cases are the ones where the problem went unnoticed for many steps.
-             Blaming “whatever just happened” fails there; a fast search over the audit log does not.</li>
-         <li>Every number on this page comes from the run files checked into the repository.
+             where to rewind, not just that something is wrong.</li>
+         <li>Half the problems are caught on the spot. Those are easy. The interesting ones sat
+             unnoticed for many steps — that is where guessing “whatever just happened” fails,
+             and a fast search of the audit log is what lands on the real origin.</li>
+         <li>Every number on this page comes from run files in the repository.
              Nothing here calls a model or spends money.</li>
        </ol>`
     )
@@ -191,10 +218,47 @@ async function viewOverview() {
   addStat(
     "Caught after a delay",
     String(late.length),
-    "where cheap guesses usually miss",
+    "where guessing the previous step usually misses",
     late.length ? "warn" : ""
   );
   root.appendChild(stats);
+
+  // Spotlight the late-detection story — this is the claim that actually lands.
+  if (loc && loc.by_lag && loc.by_lag.caught_late && loc.by_lag.caught_late.n) {
+    const lateB = loc.by_lag.caught_late;
+    const deep = loc.by_lag.lag_6_plus;
+    const featured = loc.featured_baseline || "previous_step";
+    const prevLate = ((lateB.baselines || {})[featured] || {}).exact_step_pct;
+    const prevDeep = deep && deep.n ? ((deep.baselines || {})[featured] || {}).exact_step_pct : null;
+    const spotlight = el("div", "panel spotlight");
+    spotlight.innerHTML = `
+      <h3>Where this actually earns its keep</h3>
+      <p class="sub">Half the planted faults were caught within one step. On those, blaming the
+      previous step is already right most of the time — no clever search needed. The other half
+      went unnoticed longer. That is the hard half.</p>
+      <div class="grid-3">
+        <div class="stat">
+          <div class="k">Caught late (2+ steps later)</div>
+          <div class="v">${lateB.n}</div>
+          <div class="foot">avg delay ${num(lateB.mean_lag, 1)} steps</div>
+        </div>
+        <div class="stat">
+          <div class="k">ControlPlane still exact</div>
+          <div class="v ok">${pct(lateB.ours.exact_step_pct)}</div>
+          <div class="foot">on those ${lateB.n} hard cases</div>
+        </div>
+        <div class="stat">
+          <div class="k">“Blame previous step” exact</div>
+          <div class="v danger">${pct(prevLate)}</div>
+          <div class="foot">${
+            deep && deep.n
+              ? `and ${pct(prevDeep)} on the ${deep.n} cases that sat ~${Math.round(deep.mean_lag)} steps`
+              : "collapses once the delay grows"
+          }</div>
+        </div>
+      </div>`;
+    root.appendChild(spotlight);
+  }
 
   // Architecture
   const archPanel = el("div", "panel");
@@ -219,14 +283,16 @@ async function viewOverview() {
   // Headline charts
   const chartsRow = el("div", "grid-2");
   const successPanel = el("div", "panel");
-  successPanel.innerHTML = `<h3>Does supervision help?</h3>
-    <p class="sub">Same tasks, supervisor off vs on. Detection alone (no rollback) makes things worse — recovery is what converts a stop into a fix.</p>
+  successPanel.innerHTML = `<h3>Does watching the agent help?</h3>
+    <p class="sub">Same tasks, supervisor off vs on. Catching a problem without being able to
+    rewind leaves the agent stuck — worse than doing nothing. Rewinding is what turns a stop into a fix.</p>
     <div id="chart-success"></div>`;
   chartsRow.appendChild(successPanel);
 
   const locPanel = el("div", "panel");
   locPanel.innerHTML = `<h3>Finding the step that caused it</h3>
-    <p class="sub">Split by how long the problem went unnoticed. Cheap guesses work when it is caught immediately; they collapse when it is not.</p>
+    <p class="sub">Split by how long the problem went unnoticed. A simple guess works when it is
+    caught right away. It falls apart when it is not.</p>
     <div id="chart-loc"></div>
     <div class="legend" id="chart-loc-legend"></div>`;
   chartsRow.appendChild(locPanel);
@@ -237,8 +303,8 @@ async function viewOverview() {
     const labels = {
       off: "Off",
       on: "Full on",
-      "on+detect_only": "Detect only",
-      "on+deterministic_only": "Checks only",
+      "on+detect_only": "Catch only",
+      "on+deterministic_only": "No model judge",
     };
     const series = conds
       .filter((c) => exp.conditions[c])
@@ -292,8 +358,8 @@ async function viewOverview() {
         label: "Exact pinpoint rate by detection delay",
       });
       $("#chart-loc-legend").innerHTML =
-        `<span><i style="background:var(--ok)"></i>ControlPlane (binary search)</span>` +
-        `<span><i style="background:var(--warn)"></i>Blame the previous step (fair cheap guess)</span>`;
+        `<span><i style="background:var(--ok)"></i>ControlPlane</span>` +
+        `<span><i style="background:var(--warn)"></i>Guess: previous step</span>`;
     }
   } else {
     $("#chart-loc").appendChild(
@@ -301,19 +367,21 @@ async function viewOverview() {
     );
   }
 
-  // Workload mix
+  // Workload mix — only full-on runs, otherwise "off" and "catch only" drag the % down
   const mix = el("div", "panel");
   mix.innerHTML = `<h3>Three kinds of work, one set of checks</h3>
-    <p class="sub">What differs is how urgently a check must run — interactive work cannot afford the deep path inline.</p>
+    <p class="sub">Success rate with the full supervisor on. What differs across workloads is how urgently a check must run.</p>
     <div class="grid-3" id="workload-cards"></div>`;
   root.appendChild(mix);
   const cards = mix.querySelector("#workload-cards");
   const byW = {};
-  runs.forEach((r) => {
-    byW[r.workload] = byW[r.workload] || { n: 0, ok: 0 };
-    byW[r.workload].n += 1;
-    if (r.task_success) byW[r.workload].ok += 1;
-  });
+  runs
+    .filter((r) => r.condition === "on")
+    .forEach((r) => {
+      byW[r.workload] = byW[r.workload] || { n: 0, ok: 0 };
+      byW[r.workload].n += 1;
+      if (r.task_success) byW[r.workload].ok += 1;
+    });
   Object.keys(WORKLOADS).forEach((id) => {
     const w = WORKLOADS[id];
     const s = byW[id] || { n: 0, ok: 0 };
@@ -323,7 +391,7 @@ async function viewOverview() {
         "stat",
         `<div class="k">${esc(w.name)}</div>
          <div class="v" style="font-size:1.35rem">${s.n ? pct((100 * s.ok) / s.n) : "—"}</div>
-         <div class="foot">${esc(w.hint)} · ${s.n} runs</div>`
+         <div class="foot">${esc(w.hint)} · ${s.n} full-on runs</div>`
       )
     );
   });
@@ -385,6 +453,37 @@ async function viewIncidents() {
     )
   );
 
+  // Filters
+  const filters = el("div", "filters");
+  filters.innerHTML = `
+    <label>Show
+      <select id="flt-lag">
+        <option value="all">All delays</option>
+        <option value="0">Caught same step</option>
+        <option value="1">1 step later</option>
+        <option value="late">Caught late (2+)</option>
+        <option value="deep">Sat for 40+ steps</option>
+      </select>
+    </label>
+    <label>Workload
+      <select id="flt-work">
+        <option value="all">All</option>
+        <option value="A">Customer support</option>
+        <option value="B">Internal knowledge</option>
+        <option value="C">Underwriting</option>
+      </select>
+    </label>
+    <label>Kind
+      <select id="flt-kind">
+        <option value="all">All</option>
+        <option value="traced">Traced to a planted fault</option>
+        <option value="spontaneous">Agent's own mistake</option>
+        <option value="false">False alarm</option>
+      </select>
+    </label>
+    <span class="dim" id="flt-count"></span>`;
+  root.appendChild(filters);
+
   // Lag donut
   const lagPanel = el("div", "panel");
   lagPanel.innerHTML = `<h3>How long did problems go unnoticed?</h3>
@@ -416,51 +515,73 @@ async function viewIncidents() {
       .join("");
   }
 
+  const wrap = el("div", "table-wrap");
   const table = el("table");
+  table.id = "inc-table";
   table.innerHTML = `<thead><tr>
     <th>Scenario</th><th>Workload</th><th>Safety check</th><th>When checked</th>
     <th>Caught at</th><th>Detection delay</th><th>Last correct step</th><th>Pinpoint error</th>
     <th>Outcome</th>
   </tr></thead><tbody></tbody>`;
-  const tbody = table.querySelector("tbody");
-  feed.forEach((i) => {
-    const tr = el("tr", "clickable");
-    const path =
-      i.detected_by === "inline"
-        ? `<span class="badge ok" title="Checked before the action ran">Instant</span>`
-        : `<span class="badge warn" title="Checked in the background — may be too late">Background</span>`;
-    let kind = `<span class="badge info">Traced</span>`;
-    if (i.false_alarm) kind = `<span class="badge">False alarm</span>`;
-    if (i.spontaneous) kind = `<span class="badge warn">Agent's own</span>`;
-    const err =
-      i.localization_error === null
-        ? "—"
-        : i.localization_error === 0
-          ? `<span class="badge ok">Exact</span>`
-          : `<span class="badge danger">off by ${i.localization_error}</span>`;
-    const outcome =
-      i.recovery && i.recovery.succeeded
-        ? `<span class="badge ok">Recovered</span>`
-        : i.recovery && i.recovery.escalated
-          ? `<span class="badge warn">Escalated</span>`
-          : "—";
-    tr.innerHTML = `
-      <td>${esc(i.scenario_id)}</td>
-      <td>${workloadLabel(i.workload)}</td>
-      <td><code title="${esc(i.invariant_class)}">${esc(i.invariant_id)}</code></td>
-      <td>${path}</td>
-      <td class="mono">${i.detected_at_step}</td>
-      <td class="mono">${i.delta_detect ?? "—"}</td>
-      <td class="mono">${i.last_good_step ?? "—"}</td>
-      <td>${err}</td>
-      <td>${outcome} ${kind}</td>`;
-    tr.addEventListener("click", () => showIncident(i));
-    tbody.appendChild(tr);
-  });
-  const wrap = el("div", "table-wrap");
   wrap.appendChild(table);
   root.appendChild(wrap);
-  labelCells(table);
+
+  const renderRows = () => {
+    const lag = $("#flt-lag").value;
+    const work = $("#flt-work").value;
+    const kind = $("#flt-kind").value;
+    const filtered = feed.filter((i) => {
+      if (work !== "all" && i.workload !== work) return false;
+      if (kind === "traced" && i.localization_error === null) return false;
+      if (kind === "spontaneous" && !i.spontaneous) return false;
+      if (kind === "false" && !i.false_alarm) return false;
+      if (lag === "0" && i.delta_detect !== 0) return false;
+      if (lag === "1" && i.delta_detect !== 1) return false;
+      if (lag === "late" && !(i.delta_detect > 1)) return false;
+      if (lag === "deep" && !(i.delta_detect >= 6)) return false;
+      return true;
+    });
+    $("#flt-count").textContent = `${filtered.length} shown`;
+    const tbody = table.querySelector("tbody");
+    tbody.innerHTML = "";
+    filtered.forEach((i) => {
+      const tr = el("tr", "clickable");
+      const path =
+        i.detected_by === "inline"
+          ? `<span class="badge ok" title="Checked before the action ran">Instant</span>`
+          : `<span class="badge warn" title="Checked in the background — may be too late">Background</span>`;
+      let kindBadge = `<span class="badge info">Traced</span>`;
+      if (i.false_alarm) kindBadge = `<span class="badge">False alarm</span>`;
+      if (i.spontaneous) kindBadge = `<span class="badge warn">Agent's own</span>`;
+      const err =
+        i.localization_error === null
+          ? "—"
+          : i.localization_error === 0
+            ? `<span class="badge ok">Exact</span>`
+            : `<span class="badge danger">off by ${i.localization_error}</span>`;
+      const outcome =
+        i.recovery && i.recovery.succeeded
+          ? `<span class="badge ok">Recovered</span>`
+          : i.recovery && i.recovery.escalated
+            ? `<span class="badge warn">Handed to a human</span>`
+            : "—";
+      tr.innerHTML = `
+        <td>${esc(i.scenario_id)}</td>
+        <td>${workloadLabel(i.workload)}</td>
+        <td><code title="${esc(kindLabel(i.invariant_class))}">${esc(i.invariant_id)}</code></td>
+        <td>${path}</td>
+        <td class="mono">${i.detected_at_step}</td>
+        <td class="mono">${i.delta_detect ?? "—"}</td>
+        <td class="mono">${i.last_good_step ?? "—"}</td>
+        <td>${err}</td>
+        <td>${outcome} ${kindBadge}</td>`;
+      tr.addEventListener("click", () => showIncident(i));
+      tbody.appendChild(tr);
+    });
+    labelCells(table);
+  };
+  filters.querySelectorAll("select").forEach((s) => s.addEventListener("change", renderRows));
+  renderRows();
 }
 
 async function showIncident(i) {
@@ -471,20 +592,30 @@ async function showIncident(i) {
      <h4>Summary</h4>
      <p>Safety check <code>${esc(i.invariant_id)}</code> failed at step
      <b>${i.detected_at_step}</b>
-     (${i.detected_by === "inline" ? "checked instantly" : "checked in the background"}).
+     (${i.detected_by === "inline" ? "checked instantly, before the action" : "checked in the background — may already be too late"}).
      Last step that was still correct: <b>${i.last_good_step ?? "—"}</b>
      ${i.delta_detect != null ? `· went unnoticed for <b>${i.delta_detect}</b> step(s)` : ""}.</p>
      <div id="probe-host">${probeHtml}</div>
-     <h4>Recovery</h4>
+     <h4>What happened next</h4>
+     ${
+       i.recovery && i.recovery.succeeded
+         ? `<p><span class="badge ok">Recovered</span> The run was rewound and the agent continued from the last correct step.</p>`
+         : i.recovery && i.recovery.escalated
+           ? `<p><span class="badge warn">Handed to a human</span> Something irreversible had already happened, or no safe undo existed.</p>`
+           : `<p class="dim">No recovery was attempted for this problem.</p>`
+     }
      ${json(i.recovery || {})}
-     <h4>Root-cause notes</h4>
+     <h4>Why it happened</h4>
      ${json(i.rca || {})}`
   );
   try {
     const detail = await api(`/runs/${encodeURIComponent(i.run_id)}/localization/${encodeURIComponent(i.incident_id)}`);
     const host = $("#probe-host");
     if (!host) return;
-    host.innerHTML = `<h4>How the search found it</h4><div id="probe-track"></div>`;
+    host.innerHTML = `<h4>How the search found it</h4>
+      <p class="dim">Each row is one look at the audit log: “was the run still healthy up to this step?”
+      The answer jumps from yes to no exactly once — that jump is the last correct step.</p>
+      <div id="probe-track"></div>`;
     Charts.probeTrack($("#probe-track"), detail.probes || [], {
       lastGood: (detail.localization || {}).last_good_step,
       max: i.detected_at_step,
@@ -624,25 +755,31 @@ async function viewGuards() {
 
   const table = el("table");
   table.innerHTML = `<thead><tr>
-    <th>Check</th><th>Kind</th><th>Cost</th><th>Once broken, stays broken?</th>
-    <th>Severity</th><th>Proven to matter?</th>
+    <th>Check</th><th>Kind</th><th>Speed</th><th>Once broken, stays broken?</th>
+    <th>When it fires</th><th>Proven to matter?</th>
   </tr></thead><tbody></tbody>`;
   const tbody = table.querySelector("tbody");
   guards.forEach((g) => {
     const tr = el("tr");
     const mono = g.monotone
-      ? `<span class="badge ok" title="Monotone — binary search works">Yes</span>`
-      : `<span class="badge warn" title="Non-monotone — softer estimate">No</span>`;
+      ? `<span class="badge ok" title="Once it fails, every later step also fails — so a fast search works">Yes</span>`
+      : `<span class="badge warn" title="Can flip back — we estimate rather than search exactly">No</span>`;
     const proven =
       g.sabotage_validated || g.validated
         ? `<span class="badge ok">Yes</span>`
         : `<span class="badge">Not yet</span>`;
+    const sev =
+      g.severity === "block"
+        ? `<span class="badge danger">Stops the action</span>`
+        : g.severity === "warn"
+          ? `<span class="badge warn">Warns</span>`
+          : `<span class="badge">Notes</span>`;
     tr.innerHTML = `
-      <td><code>${esc(g.id)}</code><div class="dim">${esc(g.summary || g.description || "")}</div></td>
-      <td>${esc(g.class || g.invariant_class || "")}</td>
-      <td class="mono">${esc(g.inline_cost_class || g.cost_class || g.cost || "")}</td>
+      <td><code>${esc(g.id)}</code><div class="dim">${esc(g.description || g.summary || "")}</div></td>
+      <td>${esc(kindLabel(g.class || g.invariant_class))}</td>
+      <td><span class="badge" title="${esc(g.inline_cost_class || "")}">${esc(costLabel(g.inline_cost_class || g.cost_class || g.cost))}</span></td>
       <td>${mono}</td>
-      <td>${esc(g.severity || "")}</td>
+      <td>${sev}</td>
       <td>${proven}</td>`;
     tbody.appendChild(tr);
   });
@@ -671,21 +808,37 @@ async function viewPolicy() {
       "div",
       "note",
       "A risk profile decides which safety checks run instantly vs in the background, " +
-        "and how aggressive recovery is. Interactive work gets a tight latency budget; batch work can afford deeper checks up front."
+        "and how careful to be before an action that cannot be undone. Interactive work gets a tight " +
+        "latency budget; batch work can afford deeper checks up front."
     )
   );
   const tiers = data.tiers || [];
+  if (!tiers.length) {
+    root.appendChild(el("div", "empty", "No risk profiles found."));
+    return;
+  }
+  const TIER_TITLE = {
+    "interactive-external": "Customer-facing",
+    "interactive-internal": "Internal tools",
+    "batch-analytical": "Batch / analytical",
+  };
   const grid = el("div", "grid-3");
   tiers.forEach((t) => {
+    const instant = (t.inline_classes || []).map(kindLabel).join(", ") || "—";
+    const background = (t.async_classes || []).map(kindLabel).join(", ") || "none";
     grid.appendChild(
       el(
         "div",
         "panel",
-        `<h3>${esc(t.name || t.id)}</h3>
+        `<h3>${esc(TIER_TITLE[t.name] || t.name)}</h3>
          <p class="sub">${esc(t.description || "")}</p>
-         <p>Instant budget (p95): <b class="mono">${esc(t.inline_budget_p95_ms ?? t.inline_budget_ms ?? "—")} ms</b></p>
-         <p>Background lag allowance: <b class="mono">${esc(t.async_lag_steps ?? "—")} steps</b></p>
-         <p>Active checks: <b>${(t.invariants || t.active_invariants || []).length || "—"}</b></p>`
+         <p>Instant budget: <b class="mono">${esc(t.inline_budget_p95_ms ?? "—")} ms</b>
+            <span class="dim">(p95)</span></p>
+         <p>Background may trail by: <b class="mono">${esc(t.async_lag_steps ?? "—")} steps</b></p>
+         <p><b>Checked instantly:</b> ${esc(instant)}</p>
+         <p><b>Checked in the background:</b> ${esc(background)}</p>
+         <p class="dim">If the supervisor is down:
+            <code>${esc(t.on_supervisor_unavailable || "—")}</code></p>`
       )
     );
   });
@@ -700,7 +853,7 @@ async function viewPolicy() {
         .map(
           (w) =>
             `<tr><td>${workloadLabel(w.workload || w.id)} — ${esc(w.name || "")}</td>
-             <td><code>${esc(w.tier)}</code></td></tr>`
+             <td>${esc(TIER_TITLE[w.tier] || w.tier)}</td></tr>`
         )
         .join("")}</tbody></table></div>`;
     root.appendChild(panel);
@@ -736,7 +889,8 @@ async function viewEvidence() {
       "div",
       "note",
       "These numbers are generated from the run files in the repository. " +
-        (loc.reading || "")
+        "Read the split by detection delay before the overall average — " +
+        "the overall number mixes easy catches with hard ones."
     )
   );
 
@@ -745,9 +899,9 @@ async function viewEvidence() {
     el(
       "div",
       "stat",
-      `<div class="k">Head-to-head (off vs on)</div>
+      `<div class="k">Same tasks, off vs on</div>
        <div class="v ok">${paired.c_helped ?? 0} helped</div>
-       <div class="foot">${paired.b_hurt ?? 0} hurt · p = ${paired.p_value ?? "—"}</div>`
+       <div class="foot">${paired.b_hurt ?? 0} hurt · ${pFriendly(paired.p_value)}</div>`
     )
   );
   stats.appendChild(
@@ -764,9 +918,9 @@ async function viewEvidence() {
       el(
         "div",
         "stat",
-        `<div class="k">Exact pinpoints (pooled)</div>
+        `<div class="k">Exact pinpoints (all cases)</div>
          <div class="v ok">${pct(loc.ours.exact_step_pct)}</div>
-         <div class="foot">n = ${loc.ours.n}</div>`
+         <div class="foot">${loc.ours.n} scored problems</div>`
       )
     );
   }
@@ -775,7 +929,7 @@ async function viewEvidence() {
   // Stratified localization — the compelling chart
   const split = el("div", "panel");
   split.innerHTML = `<h3>Pinpointing: easy cases vs hard cases</h3>
-    <p class="sub">When the problem is caught on the spot, blaming the previous step is already right.
+    <p class="sub">When the problem is caught on the spot, guessing “previous step” is already right.
     When it surfaces dozens of steps later, that guess collapses — and exact search does not.</p>
     <div id="ev-loc"></div>
     <div class="legend" id="ev-loc-legend"></div>`;
@@ -813,7 +967,6 @@ async function viewEvidence() {
       })
       .filter(Boolean);
     if (groups.length) {
-      // Only show llm bar when it has data in any group
       const hasLlm = groups.some((g) => g.values[2].value > 0);
       if (!hasLlm) groups.forEach((g) => (g.values = g.values.slice(0, 2)));
       Charts.groupedBars($("#ev-loc"), groups, {
@@ -822,7 +975,7 @@ async function viewEvidence() {
       });
       $("#ev-loc-legend").innerHTML =
         `<span><i style="background:var(--ok)"></i>ControlPlane</span>` +
-        `<span><i style="background:var(--warn)"></i>Blame previous step</span>` +
+        `<span><i style="background:var(--warn)"></i>Guess: previous step</span>` +
         (hasLlm ? `<span><i style="background:var(--info)"></i>Ask an LLM</span>` : "");
     }
   }
@@ -830,15 +983,25 @@ async function viewEvidence() {
   // Pooled table
   const panel = el("div", "panel");
   panel.innerHTML = `<h3>All methods on the same problems</h3>
-    <p class="sub">Featured cheap competitor is “blame the previous step”. “Blame the alarm step itself” is a labelled sanity floor — it is wrong by design.</p>
+    <p class="sub">The fair cheap competitor is “guess the previous step”.
+    “Blame the alarm step itself” is kept only as a labelled floor — it is wrong by design.</p>
     <div class="table-wrap"><table id="ev-table">
-      <thead><tr><th>Method</th><th>Exact</th><th>Within 1 step</th><th>Avg error</th><th>Model calls</th></tr></thead>
+      <thead><tr>
+        <th>Method</th><th>Exact</th><th>Within 1 step</th><th>Avg error (steps)</th>
+        <th>Work done</th>
+      </tr></thead>
       <tbody></tbody>
     </table></div>`;
   root.appendChild(panel);
   const tbody = panel.querySelector("tbody");
   const rows = [];
-  if (loc.ours) rows.push({ name: "ControlPlane (binary search)", ...loc.ours, featured: true });
+  if (loc.ours) {
+    rows.push({
+      name: "ControlPlane (search the audit log)",
+      ...loc.ours,
+      work: `${loc.ours.mean_calls ?? "—"} cheap checks · 0 model calls`,
+    });
+  }
   const names = loc.baselines || {};
   const order = [
     "previous_step",
@@ -849,15 +1012,22 @@ async function viewEvidence() {
     "random",
   ];
   const friendly = {
-    previous_step: "Blame the previous step (fair)",
-    last_write: "Blame the last state-changing write",
-    last_tool_call: "Blame the last tool call",
+    previous_step: "Guess: previous step (fair)",
+    last_write: "Guess: last state-changing write",
+    last_tool_call: "Guess: last tool call",
     llm_whole_trace: "Ask an LLM to read the whole trace",
-    detected_at: "Blame the alarm step itself (sanity floor)",
+    detected_at: "Blame the alarm step itself (floor)",
     random: "Pick a random earlier step",
   };
   order.forEach((k) => {
-    if (names[k] && names[k].n) rows.push({ name: friendly[k] || k, ...names[k] });
+    if (names[k] && names[k].n) {
+      const r = names[k];
+      const work =
+        k === "llm_whole_trace"
+          ? `${r.mean_calls ?? 1} model call`
+          : "no model calls";
+      rows.push({ name: friendly[k] || k, ...r, work });
+    }
   });
   rows.forEach((r) => {
     const tr = el("tr");
@@ -866,7 +1036,7 @@ async function viewEvidence() {
       <td class="mono">${r.exact_step_pct ?? "—"}%</td>
       <td class="mono">${r.within_1_pct ?? "—"}%</td>
       <td class="mono">${r.mean_abs_error ?? "—"}</td>
-      <td class="mono">${r.mean_calls ?? "—"}</td>`;
+      <td>${esc(r.work)}</td>`;
     tbody.appendChild(tr);
   });
   labelCells(panel.querySelector("table"));
@@ -874,15 +1044,15 @@ async function viewEvidence() {
   // Condition summary
   const condPanel = el("div", "panel");
   condPanel.innerHTML = `<h3>What happens when each piece is removed</h3>
-    <p class="sub">Detection without recovery is worse than no supervisor at all for finishing the task. Recovery is what converts a stop into a fix.</p>
+    <p class="sub">Catching a problem without being able to rewind is worse than no supervisor at all for finishing the task. Rewinding is what turns a stop into a fix.</p>
     <div id="ev-conds"></div>`;
   root.appendChild(condPanel);
   if (exp.conditions) {
     const labels = {
       off: "Supervisor off",
       on: "Full system",
-      "on+detect_only": "Detect only (no rollback)",
-      "on+deterministic_only": "Deterministic checks only",
+      "on+detect_only": "Catch only (no rewind)",
+      "on+deterministic_only": "No model judge",
     };
     const series = Object.keys(labels)
       .filter((k) => exp.conditions[k])

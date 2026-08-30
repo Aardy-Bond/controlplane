@@ -449,9 +449,62 @@ def _sabotage_validated() -> frozenset[str]:
     return frozenset()
 
 
+_TIER_BLURBS = {
+    "interactive-external": (
+        "Customer-facing work with a tight clock. Most checks run before the "
+        "action; a few deeper ones trail in the background."
+    ),
+    "interactive-internal": (
+        "Internal tools where entitlement boundaries matter. Slightly more "
+        "time for instant checks than the external tier."
+    ),
+    "batch-analytical": (
+        "Long-running analytical work. The clock is loose enough that nearly "
+        "every check can run before the next step."
+    ),
+}
+
+
+def _policy_payload() -> dict[str, Any]:
+    policy = PolicyRegistry()
+    return {
+        "tiers": [
+            {
+                "name": t.name,
+                "id": t.name,
+                "description": _TIER_BLURBS.get(t.name, ""),
+                "inline_budget_p95_ms": t.inline_budget_p95_ms,
+                "inline_classes": sorted(t.inline_classes),
+                "async_classes": sorted(t.async_classes),
+                "async_lag_steps": t.async_lag_steps,
+                "irreversible_policy": t.irreversible_policy,
+                "on_supervisor_unavailable": t.on_supervisor_unavailable,
+                "active_invariants": sorted(t.inline_classes | t.async_classes),
+            }
+            for t in policy.tiers.values()
+        ],
+        "workloads": [
+            {
+                "id": w.workload,
+                "workload": w.workload,
+                "name": w.name,
+                "tenant": w.tenant,
+                "tier": w.tier.name,
+            }
+            for w in policy.workloads.values()
+        ],
+    }
+
+
+@app.get("/api/policy")
+def policy_view() -> dict[str, Any]:
+    """Risk profiles and which workload uses which profile."""
+    return _policy_payload()
+
+
 @app.get("/api/catalogue")
 def catalogue() -> dict[str, Any]:
-    policy = PolicyRegistry()
+    policy = _policy_payload()
     return {
         "scenarios": [
             {
@@ -477,22 +530,8 @@ def catalogue() -> dict[str, Any]:
             }
             for f in FAULTS.values()
         ],
-        "tiers": [
-            {
-                "name": t.name,
-                "inline_budget_p95_ms": t.inline_budget_p95_ms,
-                "inline_classes": sorted(t.inline_classes),
-                "async_classes": sorted(t.async_classes),
-                "async_lag_steps": t.async_lag_steps,
-                "irreversible_policy": t.irreversible_policy,
-                "on_supervisor_unavailable": t.on_supervisor_unavailable,
-            }
-            for t in policy.tiers.values()
-        ],
-        "workloads": [
-            {"id": w.workload, "name": w.name, "tenant": w.tenant, "tier": w.tier.name}
-            for w in policy.workloads.values()
-        ],
+        "tiers": policy["tiers"],
+        "workloads": policy["workloads"],
     }
 
 
