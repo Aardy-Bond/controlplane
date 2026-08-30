@@ -899,40 +899,76 @@ async function viewGuards() {
   );
   root.appendChild(stats);
 
+  const filters = el("div", "filters");
+  filters.innerHTML = `
+    <label>Proven?
+      <select id="g-proven">
+        <option value="all">All</option>
+        <option value="yes">Proven to matter</option>
+        <option value="no">Not yet</option>
+      </select>
+    </label>
+    <label>Speed
+      <select id="g-cost">
+        <option value="all">All</option>
+        <option value="us">Instant</option>
+        <option value="ms">Fast</option>
+        <option value="llm">Needs a model</option>
+      </select>
+    </label>
+    <span class="dim" id="g-count"></span>`;
+  root.appendChild(filters);
+
+  const wrap = el("div", "table-wrap");
   const table = el("table");
   table.innerHTML = `<thead><tr>
     <th>Check</th><th>Kind</th><th>Speed</th><th>Once broken, stays broken?</th>
     <th>When it fires</th><th>Proven to matter?</th>
   </tr></thead><tbody></tbody>`;
-  const tbody = table.querySelector("tbody");
-  guards.forEach((g) => {
-    const tr = el("tr");
-    const mono = g.monotone
-      ? `<span class="badge ok" title="Once it fails, every later step also fails — so a fast search works">Yes</span>`
-      : `<span class="badge warn" title="Can flip back — we estimate rather than search exactly">No</span>`;
-    const proven =
-      g.sabotage_validated || g.validated
-        ? `<span class="badge ok">Yes</span>`
-        : `<span class="badge">Not yet</span>`;
-    const sev =
-      g.severity === "block"
-        ? `<span class="badge danger">Stops the action</span>`
-        : g.severity === "warn"
-          ? `<span class="badge warn">Warns</span>`
-          : `<span class="badge">Notes</span>`;
-    tr.innerHTML = `
-      <td><code>${esc(g.id)}</code><div class="dim">${esc(g.description || g.summary || "")}</div></td>
-      <td>${esc(kindLabel(g.class || g.invariant_class))}</td>
-      <td><span class="badge" title="${esc(g.inline_cost_class || "")}">${esc(costLabel(g.inline_cost_class || g.cost_class || g.cost))}</span></td>
-      <td>${mono}</td>
-      <td>${sev}</td>
-      <td>${proven}</td>`;
-    tbody.appendChild(tr);
-  });
-  const wrap = el("div", "table-wrap");
   wrap.appendChild(table);
   root.appendChild(wrap);
-  labelCells(table);
+
+  const render = () => {
+    const proven = $("#g-proven").value;
+    const cost = $("#g-cost").value;
+    const filtered = guards.filter((g) => {
+      const isProven = !!(g.sabotage_validated || g.validated);
+      if (proven === "yes" && !isProven) return false;
+      if (proven === "no" && isProven) return false;
+      if (cost !== "all" && (g.inline_cost_class || "") !== cost) return false;
+      return true;
+    });
+    $("#g-count").textContent = `${filtered.length} shown`;
+    const tbody = table.querySelector("tbody");
+    tbody.innerHTML = "";
+    filtered.forEach((g) => {
+      const tr = el("tr");
+      const mono = g.monotone
+        ? `<span class="badge ok" title="Once it fails, every later step also fails — so a fast search works">Yes</span>`
+        : `<span class="badge warn" title="Can flip back — we estimate rather than search exactly">No</span>`;
+      const provenBadge =
+        g.sabotage_validated || g.validated
+          ? `<span class="badge ok">Yes</span>`
+          : `<span class="badge">Not yet</span>`;
+      const sev =
+        g.severity === "block"
+          ? `<span class="badge danger">Stops the action</span>`
+          : g.severity === "warn"
+            ? `<span class="badge warn">Warns</span>`
+            : `<span class="badge">Notes</span>`;
+      tr.innerHTML = `
+        <td><code>${esc(g.id)}</code><div class="dim">${esc(g.description || g.summary || "")}</div></td>
+        <td>${esc(kindLabel(g.class || g.invariant_class))}</td>
+        <td><span class="badge" title="${esc(g.inline_cost_class || "")}">${esc(costLabel(g.inline_cost_class || g.cost_class || g.cost))}</span></td>
+        <td>${mono}</td>
+        <td>${sev}</td>
+        <td>${provenBadge}</td>`;
+      tbody.appendChild(tr);
+    });
+    labelCells(table);
+  };
+  filters.querySelectorAll("select").forEach((s) => s.addEventListener("change", render));
+  render();
 }
 
 /* ------------------------------------------------------------------ */
