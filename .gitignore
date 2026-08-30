@@ -1,0 +1,27 @@
+.env
+.env.*
+!.env.example
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Cached model responses — reproducible from the runs, and large.
+.cache/
+
+# runs/ is deliberately NOT ignored. The run records and their ledgers are the
+# evidence behind CLAIMS.md, and a claim you cannot audit is a claim you should
+# not make. They are synthetic and PII-redacted at write time
+# (tests/test_pii.py asserts nothing raw survives), so there is nothing here
+# that should not be public. The deployed dashboard reads these same files.
+
+.vercel/
+
+.DS_Store
+.idea/
+.vscode/

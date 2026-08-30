@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ControlPlane</title>
+<link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="mark"></span>
+    <div>
+      <h1>ControlPlane</h1>
+      <p>Runtime supervisor for tool-augmented agents</p>
+    </div>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button data-view="incidents" class="active">Incidents</button>
+    <button data-view="runs">Runs</button>
+    <button data-view="guards">Guards</button>
+    <button data-view="policy">Policy</button>
+    <button data-view="evidence">Evidence</button>
+  </nav>
+  <div class="tenant">
+    <label for="tenant">tenant</label>
+    <input id="tenant" value="meridian" spellcheck="false" />
+  </div>
+</header>
+
+<main id="main">
+  <section id="view-incidents" class="view active"></section>
+  <section id="view-runs" class="view"></section>
+  <section id="view-guards" class="view"></section>
+  <section id="view-policy" class="view"></section>
+  <section id="view-evidence" class="view"></section>
+</main>
+
+<div id="drawer" class="drawer" aria-hidden="true">
+  <div class="drawer-head">
+    <div id="drawer-title"></div>
+    <button id="drawer-close" aria-label="Close">&times;</button>
+  </div>
+  <div id="drawer-body" class="drawer-body"></div>
+</div>
+<div id="scrim" class="scrim"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

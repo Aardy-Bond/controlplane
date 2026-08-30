@@ -1,0 +1,73 @@
+# Policy tiers (PRD 5.6). A workload references a tier by name; it does not
+# inline its own config (FR-31). Hot-reloadable without redeploy (NFR-8).
+#
+# The asymmetry below is the point of the whole product: A cannot afford
+# semantic checking inline so it demotes it to async and relies far more heavily
+# on localize-and-recover; C can afford everything inline and rarely needs it.
+
+tiers:
+  interactive-external:            # workload A — customer support
+    inline_budget_p95_ms: 150
+    inline_classes: [binding, schema, precondition, provenance, budget, safety]
+    async_classes: [semantic, progress]
+    async_lag_steps: 4              # the deep path trails the agent by ~4 steps
+    irreversible_policy: verify_before_commit
+    llm_adjudication: on_flag_only
+    max_recovery_attempts: 2
+    on_supervisor_unavailable: fail_closed_irreversible_open_reads
+    escalation_sla_s: 30
+    budget:
+      max_steps: 24
+      max_tokens: 60000
+      max_usd: 0.05
+      max_per_tool:
+        send_sms: 2
+        issue_refund: 1
+
+  interactive-internal:            # workload B — internal knowledge
+    inline_budget_p95_ms: 300
+    inline_classes: [schema, provenance, entitlement, budget, safety]
+    async_classes: [progress]
+    async_lag_steps: 2
+    irreversible_policy: not_applicable
+    llm_adjudication: on_flag_only
+    max_recovery_attempts: 3
+    on_supervisor_unavailable: fail_open
+    escalation_sla_s: 300
+    budget:
+      max_steps: 14
+      max_tokens: 40000
+      max_usd: 0.03
+
+  batch-analytical:                # workload C — decision support
+    inline_budget_p95_ms: 3000
+    inline_classes:
+      [binding, schema, precondition, provenance, progress, budget, safety, semantic]
+    async_classes: []
+    async_lag_steps: 0              # C can afford to keep up; nothing trails
+    irreversible_policy: verify_before_commit
+    llm_adjudication: on_flag_and_at_phase_gates
+    max_recovery_attempts: 5
+    on_supervisor_unavailable: queue_and_hold
+    escalation_sla_s: 3600
+    budget:
+      # Sized for a ~55-step run plus one full recovery replay. Recovery is not
+      # free and the cap has to admit it, otherwise the budget guard fires on
+      # the recovery rather than on a runaway agent.
+      max_steps: 160
+      max_tokens: 1500000
+      max_usd: 0.60
+
+workloads:
+  A:
+    name: Customer Support Assistant
+    tenant: meridian
+    tier: interactive-external
+  B:
+    name: Internal Knowledge Assistant
+    tenant: meridian
+    tier: interactive-internal
+  C:
+    name: Decision-Support Tool
+    tenant: meridian
+    tier: batch-analytical

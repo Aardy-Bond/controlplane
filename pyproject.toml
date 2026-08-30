@@ -1,0 +1,43 @@
+[project]
+name = "controlplane"
+version = "0.1.0"
+description = "Runtime supervisor for tool-augmented multi-step agents"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27",
+    "pydantic>=2.7",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+    "rich>=13.7",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4"]
+
+[project.scripts]
+controlplane = "controlplane.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/controlplane"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# UP042: the str+Enum mixin is deliberate. These values are serialised into the
+# ledger and compared against JSON from tool results, and StrEnum would change
+# that behaviour on the Python versions this targets.
+ignore = ["E501", "UP042"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
