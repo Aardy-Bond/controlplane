@@ -552,7 +552,12 @@ def _scenario_blurb(scenario_id: str) -> dict[str, Any]:
 
 @app.get("/")
 def index() -> FileResponse:
-    return FileResponse(STATIC / "index.html")
+    # HTML must not be cached — otherwise a deploy that only changes JS/CSS
+    # can leave visitors on a stale shell that still points at old asset URLs.
+    return FileResponse(
+        STATIC / "index.html",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 if STATIC.exists():

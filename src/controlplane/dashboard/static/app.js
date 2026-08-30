@@ -114,6 +114,10 @@ function closeDrawer() {
   $("#scrim").classList.remove("open");
 }
 
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeDrawer();
+});
+
 function labelCells(table) {
   const headers = [...table.querySelectorAll("thead th")].map((th) => th.textContent.trim());
   table.querySelectorAll("tbody tr").forEach((tr) => {
@@ -275,7 +279,7 @@ async function viewOverview() {
     <div class="arch-steps">
       <div class="arch-step"><b>1 · Record</b>Write a tamper-evident step to the audit log</div>
       <div class="arch-step"><b>2 · Check</b>Run safety checks — instant ones before the action, deeper ones in the background</div>
-      <div class="arch-step"><b>3 · Pinpoint</b>If something fails, binary-search the log for the last correct step</div>
+      <div class="arch-step"><b>3 · Pinpoint</b>If something fails, search the log for the last correct step</div>
       <div class="arch-step"><b>4 · Recover</b>Undo what can be undone, restore state, and let the agent try a different plan</div>
     </div>`;
   root.appendChild(archPanel);
@@ -417,6 +421,13 @@ async function viewIncidents() {
     );
     return;
   }
+
+  // Prefer showing late catches first — those are the ones that make the point.
+  feed.sort((a, b) => {
+    const da = a.delta_detect == null ? -1 : a.delta_detect;
+    const db = b.delta_detect == null ? -1 : b.delta_detect;
+    return db - da;
+  });
 
   const scored = feed.filter((i) => i.localization_error !== null);
   const exact = scored.filter((i) => i.localization_error === 0).length;
@@ -644,37 +655,104 @@ async function viewRuns() {
       "div",
       "note",
       "Each row is one agent attempt at a task. Open a run to see the step-by-step ribbon — " +
-        "planted faults, blocked actions, and rollbacks stay visible even after recovery."
+        "planted faults, blocked actions, and rewinds stay visible even after recovery."
     )
   );
+
+  const filters = el("div", "filters");
+  filters.innerHTML = `
+    <label>Condition
+      <select id="run-cond">
+        <option value="all">All</option>
+        <option value="on">Full on</option>
+        <option value="off">Off</option>
+        <option value="on+detect_only">Catch only</option>
+        <option value="on+deterministic_only">No model judge</option>
+      </select>
+    </label>
+    <label>Workload
+      <select id="run-work">
+        <option value="all">All</option>
+        <option value="A">Customer support</option>
+        <option value="B">Internal knowledge</option>
+        <option value="C">Underwriting</option>
+      </select>
+    </label>
+    <label>Result
+      <select id="run-ok">
+        <option value="all">All</option>
+        <option value="ok">Finished</option>
+        <option value="fail">Failed</option>
+        <option value="harm">Harm occurred</option>
+      </select>
+    </label>
+    <span class="dim" id="run-count"></span>`;
+  root.appendChild(filters);
+
+  const wrap = el("div", "table-wrap");
   const table = el("table");
   table.innerHTML = `<thead><tr>
     <th>Scenario</th><th>Workload</th><th>Condition</th><th>Seed</th>
     <th>Steps</th><th>Problems</th><th>Task result</th><th>Harm</th>
   </tr></thead><tbody></tbody>`;
-  const tbody = table.querySelector("tbody");
-  rows.forEach((r) => {
-    const tr = el("tr", "clickable");
-    tr.innerHTML = `
-      <td>${esc(r.scenario_id)}</td>
-      <td>${workloadLabel(r.workload)}</td>
-      <td><code>${esc(r.condition)}</code></td>
-      <td class="mono">${r.seed}</td>
-      <td class="mono">${r.steps}</td>
-      <td class="mono">${r.incidents}</td>
-      <td>${r.task_success ? `<span class="badge ok">Finished</span>` : `<span class="badge danger">Failed</span>`}</td>
-      <td>${r.harm_occurred ? `<span class="badge danger">Yes</span>` : `<span class="badge ok">No</span>`}</td>`;
-    tr.addEventListener("click", () => showRun(r.run_id));
-    tbody.appendChild(tr);
-  });
-  const wrap = el("div", "table-wrap");
   wrap.appendChild(table);
   root.appendChild(wrap);
-  labelCells(table);
+
+  const COND_LABEL = {
+    off: "Off",
+    on: "Full on",
+    "on+detect_only": "Catch only",
+    "on+deterministic_only": "No model judge",
+  };
+
+  const render = () => {
+    const cond = $("#run-cond").value;
+    const work = $("#run-work").value;
+    const ok = $("#run-ok").value;
+    const filtered = rows.filter((r) => {
+      if (cond !== "all" && r.condition !== cond) return false;
+      if (work !== "all" && r.workload !== work) return false;
+      if (ok === "ok" && !r.task_success) return false;
+      if (ok === "fail" && r.task_success) return false;
+      if (ok === "harm" && !r.harm_occurred) return false;
+      return true;
+    });
+    $("#run-count").textContent = `${filtered.length} shown`;
+    const tbody = table.querySelector("tbody");
+    tbody.innerHTML = "";
+    filtered.forEach((r) => {
+      const tr = el("tr", "clickable");
+      tr.innerHTML = `
+        <td>${esc(r.scenario_id)}</td>
+        <td>${workloadLabel(r.workload)}</td>
+        <td>${esc(COND_LABEL[r.condition] || r.condition)}</td>
+        <td class="mono">${r.seed}</td>
+        <td class="mono">${r.steps}</td>
+        <td class="mono">${r.incidents}</td>
+        <td>${r.task_success ? `<span class="badge ok">Finished</span>` : `<span class="badge danger">Failed</span>`}</td>
+        <td>${r.harm_occurred ? `<span class="badge danger">Yes</span>` : `<span class="badge ok">No</span>`}</td>`;
+      tr.addEventListener("click", () => showRun(r.run_id));
+      tbody.appendChild(tr);
+    });
+    labelCells(table);
+  };
+  filters.querySelectorAll("select").forEach((s) => s.addEventListener("change", render));
+  render();
 }
 
 async function showRun(runId) {
   openDrawer(`Run ${runId}`, `<p class="dim">Loading timeline…</p>`);
+  const SRC = {
+    ok: "Returned OK",
+    error_tagged: "Returned an error",
+    denied: "Permission denied",
+    unlabelled: "Unlabelled result",
+  };
+  const REV = {
+    reversible: "Safe to retry",
+    compensable: "Can be undone",
+    irreversible: "Cannot be undone",
+  };
   try {
     const tl = await api(`/runs/${encodeURIComponent(runId)}/timeline`);
     const body = $("#drawer-body");
@@ -682,18 +760,26 @@ async function showRun(runId) {
       <p><b>${esc((tl.scenario || {}).title || tl.scenario_id)}</b><br/>
       <span class="dim">${esc((tl.scenario || {}).narrative || "")}</span></p>
       <p>Workload: ${workloadLabel(tl.workload)} ·
-         Condition: <code>${esc(tl.condition)}</code> ·
-         ${tl.task_success ? `<span class="badge ok">Finished</span>` : `<span class="badge danger">Failed</span>`}</p>
+         ${tl.task_success ? `<span class="badge ok">Finished</span>` : `<span class="badge danger">Failed</span>`}
+         ${tl.harm && tl.harm.harm_occurred ? ` <span class="badge danger">Harm</span>` : ""}</p>
       <h4>Step ribbon</h4>
       <div class="legend">
         <span><i style="background:rgba(224,179,90,.5)"></i>Planted fault</span>
         <span><i style="background:rgba(224,122,106,.5)"></i>Alarm</span>
-        <span><i style="background:rgba(122,167,224,.4)"></i>Rollback</span>
+        <span><i style="background:rgba(122,167,224,.4)"></i>Rewound</span>
+        <span><i style="background:rgba(125,211,192,.15)"></i>Abandoned attempt</span>
       </div>
       <div id="ribbon"></div>
       <h4>Selected step</h4>
       <div id="step-detail" class="dim">Click a step in the ribbon.</div>
       <h4>Audit integrity</h4>
+      <p class="dim">${
+        tl.integrity && tl.integrity.chain_intact
+          ? "Hash chain intact — the audit log has not been tampered with."
+          : tl.integrity && tl.integrity.note
+            ? esc(tl.integrity.note)
+            : "Integrity check unavailable."
+      }</p>
       ${json(tl.integrity || {})}`;
     Charts.stepRibbon($("#ribbon"), tl.steps || [], {
       faults: tl.fault_steps || [],
@@ -701,13 +787,14 @@ async function showRun(runId) {
         $("#step-detail").innerHTML = `
           <p><b>Step ${s.step}</b>${s.superseded ? " <span class='badge'>Abandoned attempt</span>" : ""}
           ${s.blocked ? " <span class='badge danger'>Blocked</span>" : ""}
-          ${s.rollback_to != null ? ` <span class='badge info'>Rolled back to ${s.rollback_to}</span>` : ""}</p>
-          <p>Tool: <code>${esc(s.tool || "—")}</code>
-             · Status: <code>${esc(s.source_class || "—")}</code>
-             · Can undo?: <code>${esc(s.reversibility || "—")}</code></p>
+          ${s.rollback_to != null ? ` <span class='badge info'>Rewound to ${s.rollback_to}</span>` : ""}</p>
+          <p>Tool: <code>${esc(s.tool || "—")}</code></p>
+          <p>Result: ${esc(SRC[s.source_class] || s.source_class || "—")}
+             · Undo?: ${esc(REV[s.reversibility] || s.reversibility || "—")}</p>
           <p>${esc(s.narrative || "")}</p>
-          ${s.fault ? `<p class="badge warn">Planted fault: ${esc(s.fault.fault_id || s.fault.id || "yes")}</p>` : ""}
-          ${json({ args: s.args, result: s.result, incidents: s.incidents })}`;
+          ${s.fault ? `<p><span class="badge warn">Planted fault here</span></p>` : ""}
+          ${(s.incidents || []).length ? `<p><span class="badge danger">${s.incidents.length} alarm(s) at this step</span></p>` : ""}
+          ${json({ args: s.args, result: s.result })}`;
       },
     });
   } catch (e) {
