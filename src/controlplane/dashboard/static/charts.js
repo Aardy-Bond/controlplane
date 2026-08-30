@@ -199,10 +199,10 @@
             x: gx + groupW / 2,
             y: h - 14,
             fill: "var(--muted)",
-            "font-size": 12,
+            "font-size": groupW < 90 ? 10 : 12,
             "text-anchor": "middle",
           },
-          g.label
+          g.label.length > 22 && groupW < 120 ? g.label.slice(0, 20) + "…" : g.label
         )
       );
     });

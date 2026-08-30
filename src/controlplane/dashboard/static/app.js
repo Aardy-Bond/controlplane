@@ -922,6 +922,12 @@ async function viewPolicy() {
     "interactive-internal": "Internal tools",
     "batch-analytical": "Batch / analytical",
   };
+  const DOWN = {
+    fail_closed_irreversible_open_reads:
+      "Block irreversible actions; allow safe reads",
+    fail_open: "Let the agent keep going",
+    queue_and_hold: "Queue work and wait",
+  };
   const grid = el("div", "grid-3");
   tiers.forEach((t) => {
     const instant = (t.inline_classes || []).map(kindLabel).join(", ") || "—";
@@ -938,7 +944,7 @@ async function viewPolicy() {
          <p><b>Checked instantly:</b> ${esc(instant)}</p>
          <p><b>Checked in the background:</b> ${esc(background)}</p>
          <p class="dim">If the supervisor is down:
-            <code>${esc(t.on_supervisor_unavailable || "—")}</code></p>`
+            ${esc(DOWN[t.on_supervisor_unavailable] || t.on_supervisor_unavailable || "—")}</p>`
       )
     );
   });
