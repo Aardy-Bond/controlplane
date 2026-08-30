@@ -164,17 +164,39 @@ class Experiment:
         return result
 
     def localization_vs_baselines(self, judge: LLMClient | None = None) -> dict[str, Any]:
-        """Replay every incident under each baseline and score identically."""
+        """Replay every incident under each baseline and score identically.
+
+        Returns a pooled comparison plus a split by detection delay. The pooled
+        number alone is misleading: when a fault is caught on the step it was
+        planted, blaming the previous step is already exact and binary search
+        earns nothing. The interesting regime is late detection, where cheap
+        heuristics drift by tens of steps. Both views are persisted so the
+        dashboard cannot quietly pick the flatter one.
+        """
         from ..ledger import Ledger
         from ..types import Violation
 
-        ours: list[bool] = []
-        ours_err: list[float] = []
-        ours_evals: list[float] = []
-        per_baseline: dict[str, dict[str, list]] = {
-            name: {"exact": [], "err": [], "calls": []} for name in BASELINES
+        # Strata: caught immediately (lag ≤ 1) vs caught late (lag > 1). The
+        # late band is where search has to do real work; the immediate band is
+        # where the fair cheap baseline is competitive.
+        STRATA = {
+            "all": lambda lag: True,
+            "caught_immediately": lambda lag: lag <= 1,
+            "caught_late": lambda lag: lag > 1,
+            "lag_0": lambda lag: lag == 0,
+            "lag_1": lambda lag: lag == 1,
+            "lag_2_5": lambda lag: 2 <= lag <= 5,
+            "lag_6_plus": lambda lag: lag >= 6,
         }
-        incidents_seen = 0
+
+        def empty_bucket() -> dict[str, Any]:
+            return {
+                "ours": {"exact": [], "err": [], "calls": []},
+                "baselines": {name: {"exact": [], "err": [], "calls": []} for name in BASELINES},
+                "lags": [],
+            }
+
+        buckets = {name: empty_bucket() for name in STRATA}
 
         for record in self.records:
             if record.condition == "off" or not record.incidents:
@@ -208,25 +230,41 @@ class Experiment:
                 if not candidates:
                     continue
                 expected_L = max(candidates) - 1
-                incidents_seen += 1
+                lag = detected_at - (expected_L + 1)
 
                 reported = (inc.get("localization") or {}).get("last_good_step", -999)
-                ours_err.append(abs(reported - expected_L))
-                ours.append(reported == expected_L)
-                ours_evals.append((inc.get("localization") or {}).get("evaluations", 0))
+                ours_exact = reported == expected_L
+                ours_err = abs(reported - expected_L)
+                ours_evals = (inc.get("localization") or {}).get("evaluations", 0)
 
                 violation = Violation(**inc["violation"])
+                baseline_rows: dict[str, tuple[bool, float, int]] = {}
                 for name in BASELINES:
+                    if name == "llm_whole_trace" and judge is None:
+                        continue
                     loc = localize_with_baseline(
                         name, ledger, violation, judge=judge, seed=record.seed
                     )
-                    if name == "llm_whole_trace" and judge is None:
-                        continue
-                    per_baseline[name]["exact"].append(loc.last_good_step == expected_L)
-                    per_baseline[name]["err"].append(abs(loc.last_good_step - expected_L))
-                    per_baseline[name]["calls"].append(loc.evaluations)
+                    baseline_rows[name] = (
+                        loc.last_good_step == expected_L,
+                        abs(loc.last_good_step - expected_L),
+                        loc.evaluations,
+                    )
 
-        def block(exact: list[bool], err: list[float], calls: list[float]) -> dict[str, Any]:
+                for stratum, pred in STRATA.items():
+                    if not pred(lag):
+                        continue
+                    bucket = buckets[stratum]
+                    bucket["lags"].append(lag)
+                    bucket["ours"]["exact"].append(ours_exact)
+                    bucket["ours"]["err"].append(ours_err)
+                    bucket["ours"]["calls"].append(ours_evals)
+                    for name, (ex, err, calls) in baseline_rows.items():
+                        bucket["baselines"][name]["exact"].append(ex)
+                        bucket["baselines"][name]["err"].append(err)
+                        bucket["baselines"][name]["calls"].append(calls)
+
+        def block(exact: list, err: list, calls: list) -> dict[str, Any]:
             if not exact:
                 return {"n": 0, "note": "not run"}
             return {
@@ -238,20 +276,51 @@ class Experiment:
                 "mean_calls": round(statistics.fmean(calls), 2),
             }
 
+        def summarize(bucket: dict[str, Any]) -> dict[str, Any]:
+            lags = bucket["lags"]
+            return {
+                "n": len(lags),
+                "mean_lag": round(statistics.fmean(lags), 3) if lags else None,
+                "median_lag": statistics.median(lags) if lags else None,
+                "ours": block(
+                    bucket["ours"]["exact"], bucket["ours"]["err"], bucket["ours"]["calls"]
+                ),
+                "baselines": {
+                    name: block(d["exact"], d["err"], d["calls"])
+                    for name, d in bucket["baselines"].items()
+                },
+            }
+
+        pooled = summarize(buckets["all"])
+        by_lag = {name: summarize(buckets[name]) for name in STRATA if name != "all"}
         return {
-            "incidents": incidents_seen,
-            "ours": block(ours, ours_err, ours_evals),
-            "baselines": {
-                name: block(d["exact"], d["err"], d["calls"]) for name, d in per_baseline.items()
-            },
+            "incidents": pooled["n"],
+            "ours": pooled["ours"],
+            "baselines": pooled["baselines"],
+            # Featured cheap competitor — the one a reader should compare us to.
+            "featured_baseline": "previous_step",
+            "by_lag": by_lag,
+            "reading": (
+                "When a fault is caught on the step it was planted (or one step "
+                "later), blaming the previous step is already exact and binary "
+                "search adds little. When detection is delayed by many steps, "
+                "cheap heuristics drift with the lag and exact search is the "
+                "method that stays on the origin. Read the by_lag split before "
+                "the pooled average."
+            ),
         }
 
-    def save(self, path: Path | None = None) -> Path:
+    def save(self, path: Path | None = None, localization: dict[str, Any] | None = None) -> Path:
         path = path or (self.root / "experiment.json")
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "conditions": self.summary(),
             "paired_supervisor_effect": self.paired_supervisor_effect(),
+            # The baseline comparison is the one number that says whether binary
+            # search was worth building, so it belongs in the saved evidence
+            # rather than only in the terminal output of the run that produced
+            # it. Anything the dashboard shows has to be re-readable from disk.
+            "localization_vs_baselines": localization,
             "run_ids": [r.run_id for r in self.records],
             "meter": METER.summary(),
         }
@@ -296,8 +365,10 @@ CLAIMS = [
     ),
     (
         "C3",
-        "Exact localization beats what you would otherwise do: alarm-step blame, "
-        "last-tool-call blame, and an LLM reading the whole trace.",
+        "Exact localization beats the fair cheap guess (blame the previous step) "
+        "and the other alternatives, especially when detection is delayed. Read "
+        "the by_lag split: on immediate catches the cheap guess is competitive; "
+        "on late catches it collapses.",
         "localization.baselines",
     ),
     (
