@@ -20,6 +20,12 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4"]
 [project.scripts]
 controlplane = "controlplane.cli:main"
 
+# The hosted dashboard. Named explicitly rather than left to autodetection so
+# that adding a file called `main.py` or `server.py` somewhere cannot silently
+# change what gets deployed.
+[tool.vercel]
+entrypoint = "api.index:app"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

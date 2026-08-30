@@ -2,6 +2,13 @@
 
 A runtime supervisor for tool-augmented, multi-step AI agents.
 
+**Live dashboard: [controlplane-supervisor.vercel.app](https://controlplane-supervisor.vercel.app)**
+
+The hosted site reads the same run records that are committed to this
+repository, so every number on it can be traced to a ledger you can open. It
+never calls a model — the evidence was produced locally and checked in, which is
+also why the deployment needs no API key.
+
 Most responsible-AI tooling checks the **text** a model produces. That is the
 easy half. The hard half is that an agent takes **actions**: it calls tools, it
 writes to systems, it moves money, and one bad value at step 11 quietly shapes
@@ -300,7 +307,8 @@ tests/             monotonicity properties, sabotage suite, ledger, PII
 
 ## Dashboard
 
-`controlplane serve` — incident feed with localization error against injected
+Hosted at [controlplane-supervisor.vercel.app](https://controlplane-supervisor.vercel.app),
+or `controlplane serve` locally — incident feed with localization error against injected
 ground truth; run timelines that keep rolled-back attempts visible because the
 audit trail is append-only; a localization view that **re-runs the binary search
 live** against the saved ledger so the probe sequence is checkable rather than
