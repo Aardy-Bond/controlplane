@@ -76,7 +76,7 @@ async function api(path) {
 /* navigation                                                          */
 /* ------------------------------------------------------------------ */
 
-function setView(name) {
+function setView(name, opts = {}) {
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
   $$("#nav button, #tabbar button").forEach((b) =>
     b.classList.toggle("active", b.dataset.view === name)
@@ -84,8 +84,9 @@ function setView(name) {
   $("#topbar-title").textContent = TITLES[name] || name;
   $("#sidebar").classList.remove("open");
   const fn = VIEWS[name];
-  if (fn) fn();
-  history.replaceState(null, "", `#${name}`);
+  if (fn) fn(opts);
+  const q = opts && opts.lag ? `?lag=${encodeURIComponent(opts.lag)}` : "";
+  history.replaceState(null, "", `#${name}${q}`);
 }
 
 function wireNav() {
@@ -96,8 +97,9 @@ function wireNav() {
   $("#scrim").addEventListener("click", closeDrawer);
   $("#drawer-close").addEventListener("click", closeDrawer);
   $("#tenant").addEventListener("change", () => {
-    const hash = (location.hash || "#overview").slice(1);
-    setView(TITLES[hash] ? hash : "overview");
+    const raw = (location.hash || "#overview").slice(1);
+    const name = raw.split("?")[0];
+    setView(TITLES[name] ? name : "overview");
   });
 }
 
@@ -260,8 +262,15 @@ async function viewOverview() {
               : "collapses once the delay grows"
           }</div>
         </div>
+      </div>
+      <div class="hero-cta" style="margin-top:1rem">
+        <button class="btn" data-go-lag="late">Browse the late catches</button>
+        <button class="btn ghost" data-go-lag="deep">Only the 40+ step ones</button>
       </div>`;
     root.appendChild(spotlight);
+    spotlight.querySelectorAll("[data-go-lag]").forEach((b) =>
+      b.addEventListener("click", () => setView("incidents", { lag: b.dataset.goLag }))
+    );
   }
 
   // Architecture
@@ -277,7 +286,7 @@ async function viewOverview() {
       <div class="arch-node"><strong>Tool</strong><span>lookup, write, refund…</span></div>
     </div>
     <div class="arch-steps">
-      <div class="arch-step"><b>1 · Record</b>Write a tamper-evident step to the audit log</div>
+      <div class="arch-step"><b>1 · Record</b>Write a sealed step to the audit log</div>
       <div class="arch-step"><b>2 · Check</b>Run safety checks — instant ones before the action, deeper ones in the background</div>
       <div class="arch-step"><b>3 · Pinpoint</b>If something fails, search the log for the last correct step</div>
       <div class="arch-step"><b>4 · Recover</b>Undo what can be undone, restore state, and let the agent try a different plan</div>
@@ -405,7 +414,7 @@ async function viewOverview() {
 /* incidents                                                           */
 /* ------------------------------------------------------------------ */
 
-async function viewIncidents() {
+async function viewIncidents(opts = {}) {
   const root = $("#view-incidents");
   root.innerHTML = "";
   let feed;
@@ -592,6 +601,10 @@ async function viewIncidents() {
     labelCells(table);
   };
   filters.querySelectorAll("select").forEach((s) => s.addEventListener("change", renderRows));
+  // Deep-link support: #incidents?lag=late|deep|0|1
+  if (opts.lag && ["all", "0", "1", "late", "deep"].includes(opts.lag)) {
+    $("#flt-lag").value = opts.lag;
+  }
   renderRows();
 }
 
@@ -1169,5 +1182,11 @@ const VIEWS = {
 };
 
 wireNav();
-const initial = (location.hash || "#overview").slice(1);
-setView(VIEWS[initial] ? initial : "overview");
+(function boot() {
+  const raw = (location.hash || "#overview").slice(1);
+  const [name, qs] = raw.split("?");
+  const params = new URLSearchParams(qs || "");
+  const opts = {};
+  if (params.get("lag")) opts.lag = params.get("lag");
+  setView(VIEWS[name] ? name : "overview", opts);
+})();
