@@ -2,49 +2,119 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>ControlPlane</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="dark" />
+<title>ControlPlane.ai — AI agent supervision</title>
+<meta name="description" content="ControlPlane.ai is a runtime supervisor for tool-augmented, multi-step AI agents. It intercepts every tool call, pinpoints the last good step, and recovers." />
+
+<meta property="og:title" content="ControlPlane.ai" />
+<meta property="og:description" content="Runtime supervisor for tool-augmented AI agents. Exact fault localization by binary search over an append-only ledger." />
+<meta property="og:type" content="website" />
+<meta property="og:image" content="/static/og.jpg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
 <link rel="stylesheet" href="/static/app.css" />
 </head>
 <body>
-<header class="topbar">
-  <div class="brand">
-    <span class="mark"></span>
-    <div>
-      <h1>ControlPlane</h1>
-      <p>Runtime supervisor for tool-augmented agents</p>
+
+<!-- The gradient used by both logo instances. Defined once, up front, so the
+     topbar copy can reference it by id without duplicating the stops. -->
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <defs>
+    <linearGradient id="lg" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C2A3FF" />
+      <stop offset=".5" stop-color="#A100FF" />
+      <stop offset="1" stop-color="#7500C0" />
+    </linearGradient>
+  </defs>
+</svg>
+
+<div class="app">
+
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+        <rect x="1.5" y="1.5" width="37" height="37" rx="10" stroke="url(#lg)" stroke-width="2" />
+        <path d="M12 11l12 9-12 9" stroke="url(#lg)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div class="brand-txt">
+        <h1>ControlPlane.ai</h1>
+        <p>AI agent supervision</p>
+      </div>
     </div>
-  </div>
-  <nav class="tabs" id="tabs">
-    <button data-view="incidents" class="active">Incidents</button>
-    <button data-view="runs">Runs</button>
-    <button data-view="guards">Guards</button>
-    <button data-view="policy">Policy</button>
-    <button data-view="evidence">Evidence</button>
-  </nav>
-  <div class="tenant">
-    <label for="tenant">tenant</label>
-    <input id="tenant" value="meridian" spellcheck="false" />
-  </div>
-</header>
 
-<main id="main">
-  <section id="view-incidents" class="view active"></section>
-  <section id="view-runs" class="view"></section>
-  <section id="view-guards" class="view"></section>
-  <section id="view-policy" class="view"></section>
-  <section id="view-evidence" class="view"></section>
-</main>
+    <nav class="nav" id="nav"></nav>
 
-<div id="drawer" class="drawer" aria-hidden="true">
+    <div class="side-foot">
+      <div class="field">
+        <label for="tenant">Project</label>
+        <input id="tenant" value="meridian" spellcheck="false" autocomplete="off" />
+      </div>
+      <div class="user-chip">
+        <span class="avatar" aria-hidden="true">OP</span>
+        <span>
+          <b>Ops Team</b>
+          <small>Administrator</small>
+        </span>
+      </div>
+      <div class="side-meta" id="side-meta"></div>
+      <a class="accenture-mark" href="https://www.accenture.com" target="_blank" rel="noopener" aria-label="Accenture">
+        <img src="/static/accenture.svg" alt="Accenture" />
+      </a>
+    </div>
+  </aside>
+
+  <div>
+    <header class="topbar">
+      <button class="icon-btn" id="menu" aria-label="Open navigation">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M3 6h18M3 12h18M3 18h18" />
+        </svg>
+      </button>
+      <svg class="logo" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+        <rect x="1.5" y="1.5" width="37" height="37" rx="10" stroke="url(#lg)" stroke-width="2" />
+        <path d="M12 11l12 9-12 9" stroke="url(#lg)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <h1 id="topbar-title">Overview</h1>
+      <div class="spacer"></div>
+      <span class="top-pill">Recorded evidence</span>
+    </header>
+
+    <main id="main">
+      <section id="view-overview" class="view active"></section>
+      <section id="view-incidents" class="view"></section>
+      <section id="view-runs" class="view"></section>
+      <section id="view-guards" class="view"></section>
+      <section id="view-policy" class="view"></section>
+      <section id="view-evidence" class="view"></section>
+      <footer class="site-footer">
+        <span>© 2026 Accenture. All rights reserved.</span>
+        <span class="foot-mid">ControlPlane.ai · Innovation Challenge Track 1</span>
+        <span class="status-dot">System status · evidence on disk</span>
+      </footer>
+    </main>
+  </div>
+</div>
+
+<nav class="tabbar" id="tabbar"></nav>
+
+<div id="drawer" class="drawer" role="dialog" aria-modal="true" aria-hidden="true">
   <div class="drawer-head">
     <div id="drawer-title"></div>
-    <button id="drawer-close" aria-label="Close">&times;</button>
+    <button class="icon-btn" id="drawer-close" aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M18 6 6 18M6 6l12 12" />
+      </svg>
+    </button>
   </div>
   <div id="drawer-body" class="drawer-body"></div>
 </div>
 <div id="scrim" class="scrim"></div>
 
+<script src="/static/charts.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

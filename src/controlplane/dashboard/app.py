@@ -34,7 +34,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 RUNS_ROOT = Path(os.getenv("CONTROLPLANE_RUNS") or _REPO_ROOT / "runs")
 STATIC = Path(__file__).parent / "static"
 
-app = FastAPI(title="ControlPlane", docs_url="/api/docs")
+app = FastAPI(title="ControlPlane.ai", docs_url="/api/docs")
 
 
 # --------------------------------------------------------------------------
